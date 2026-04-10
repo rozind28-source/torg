@@ -106,10 +106,16 @@ class ChartAnalyzer:
             
             print(f"🔍 [Analyzer] Загрузка изображения: {image_path}")
             
-            # Загрузка изображения
-            img = cv2.imread(image_path)
+            # Загрузка изображения (используем imdecode для поддержки кириллицы в пути)
+            img_array = np.fromfile(image_path, dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            
             if img is None:
-                print(f"❌ [Analyzer] Не удалось загрузить изображение через cv2.imread()")
+                print(f"❌ [Analyzer] Не удалось загрузить изображение через cv2.imdecode()")
+                print(f"   Путь к файлу: {image_path}")
+                print(f"   Файл существует: {os.path.exists(image_path)}")
+                if os.path.exists(image_path):
+                    print(f"   Размер файла: {os.path.getsize(image_path)} байт")
                 return {"error": "Не удалось загрузить изображение"}
             
             print(f"✅ [Analyzer] Изображение загружено успешно. Размер: {img.shape}")
