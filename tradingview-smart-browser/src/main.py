@@ -104,14 +104,21 @@ class ChartAnalyzer:
             import cv2
             from PIL import Image
             
+            print(f"🔍 [Analyzer] Загрузка изображения: {image_path}")
+            
             # Загрузка изображения
             img = cv2.imread(image_path)
             if img is None:
+                print(f"❌ [Analyzer] Не удалось загрузить изображение через cv2.imread()")
                 return {"error": "Не удалось загрузить изображение"}
+            
+            print(f"✅ [Analyzer] Изображение загружено успешно. Размер: {img.shape}")
             
             # Конвертация в различные цветовые пространства для анализа
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             edges = cv2.Canny(gray, 50, 150)
+            
+            print(f"📊 [Analyzer] Границы обнаружены. Количество активных пикселей: {np.sum(edges > 0)}")
             
             # Анализ гистограммы яркости для определения свечей
             hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
@@ -121,9 +128,11 @@ class ChartAnalyzer:
             
             # Простой анализ тренда по направлению движения цены
             trend = self._detect_trend(edges, img)
+            print(f"📈 [Analyzer] Определен тренд: {trend}")
             
             # Поиск горизонтальных линий (уровни поддержки/сопротивления)
             support_resistance = self._find_horizontal_levels(edges)
+            print(f"📊 [Analyzer] Найдено уровней: поддержка={len(support_resistance.get('support', []))}, сопротивление={len(support_resistance.get('resistance', []))}")
             
             analysis = {
                 "timestamp": datetime.now().isoformat(),
@@ -136,9 +145,13 @@ class ChartAnalyzer:
             }
             
             self.analysis_history.append(analysis)
+            print(f"✅ [Analyzer] Анализ завершен успешно")
             return analysis
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"❌ [Analyzer] Ошибка анализа: {str(e)}\n{error_details}")
             return {"error": f"Ошибка анализа: {str(e)}"}
     
     def _detect_trend(self, edges, img) -> str:
@@ -465,16 +478,28 @@ class SmartBrowser(QMainWindow):
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(30)
             
+            # Проверяем существование файла и его размер
+            if not os.path.exists(self.last_screenshot):
+                raise FileNotFoundError(f"Файл скриншота не найден: {self.last_screenshot}")
+            
+            file_size = os.path.getsize(self.last_screenshot)
+            print(f"🔍 Начинаю анализ файла: {self.last_screenshot}, размер: {file_size} байт")
+            
             # Выполняем анализ
             analysis = self.analyzer.analyze_screenshot(self.last_screenshot)
+            
+            print(f"📊 Результат анализа: {analysis}")
             
             self.progress_bar.setValue(70)
             
             if "error" in analysis:
-                self.analysis_result.setText(f"❌ Ошибка анализа:\n{analysis['error']}")
+                error_msg = f"❌ Ошибка анализа:\n{analysis['error']}"
+                print(error_msg)
+                self.analysis_result.setText(error_msg)
             else:
                 # Отображаем результаты
                 summary = self.analyzer.get_analysis_summary()
+                print(f"✅ Анализ успешен: {summary[:100]}...")
                 self.analysis_result.setText(summary)
                 
                 # Обновляем историю
@@ -486,6 +511,10 @@ class SmartBrowser(QMainWindow):
             QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
             
         except Exception as e:
+            error_trace = f"Ошибка анализа: {str(e)}\nТип: {type(e).__name__}"
+            print(error_trace)
+            import traceback
+            traceback.print_exc()
             self.statusBar.showMessage(f"Ошибка анализа: {str(e)}")
             self.progress_bar.setVisible(False)
             QMessageBox.critical(self, "Ошибка", f"Не удалось проанализировать график:\n{str(e)}")
