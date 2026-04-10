@@ -34,6 +34,8 @@ class ScreenshotWorker(QThread):
         try:
             import mss
             import mss.tools
+            from PIL import Image
+            import numpy as np
             
             # Получаем координаты и размер виджета браузера
             browser_widget = self.browser_window.browser
@@ -71,8 +73,14 @@ class ScreenshotWorker(QThread):
                 filename = f"tradingview_{timestamp}.png"
                 filepath = os.path.join(screenshot_dir, filename)
                 
-                # Сохраняем как PNG
-                mss.tools.to_png(screenshot.rgb, screenshot.size, output=filepath)
+                # Конвертируем BGRA в RGB и сохраняем через PIL
+                # mss возвращает данные в формате BGRA, нужно конвертировать в RGB
+                img_array = np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(
+                    screenshot.size[1], screenshot.size[0], 4
+                )
+                # Меняем местами синий и красный каналы (BGRA -> RGB), отбрасываем alpha
+                img_rgb = Image.fromarray(img_array[:, :, [2, 1, 0]], mode='RGB')
+                img_rgb.save(filepath, 'PNG')
                 
                 # Проверяем результат
                 if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
@@ -96,14 +104,27 @@ class ChartAnalyzer:
             import cv2
             from PIL import Image
             
-            # Загрузка изображения
-            img = cv2.imread(image_path)
+            print(f"🔍 [Analyzer] Загрузка изображения: {image_path}")
+            
+            # Загрузка изображения (используем imdecode для поддержки кириллицы в пути)
+            img_array = np.fromfile(image_path, dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            
             if img is None:
+                print(f"❌ [Analyzer] Не удалось загрузить изображение через cv2.imdecode()")
+                print(f"   Путь к файлу: {image_path}")
+                print(f"   Файл существует: {os.path.exists(image_path)}")
+                if os.path.exists(image_path):
+                    print(f"   Размер файла: {os.path.getsize(image_path)} байт")
                 return {"error": "Не удалось загрузить изображение"}
+            
+            print(f"✅ [Analyzer] Изображение загружено успешно. Размер: {img.shape}")
             
             # Конвертация в различные цветовые пространства для анализа
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             edges = cv2.Canny(gray, 50, 150)
+            
+            print(f"📊 [Analyzer] Границы обнаружены. Количество активных пикселей: {np.sum(edges > 0)}")
             
             # Анализ гистограммы яркости для определения свечей
             hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
@@ -113,9 +134,11 @@ class ChartAnalyzer:
             
             # Простой анализ тренда по направлению движения цены
             trend = self._detect_trend(edges, img)
+            print(f"📈 [Analyzer] Определен тренд: {trend}")
             
             # Поиск горизонтальных линий (уровни поддержки/сопротивления)
             support_resistance = self._find_horizontal_levels(edges)
+            print(f"📊 [Analyzer] Найдено уровней: поддержка={len(support_resistance.get('support', []))}, сопротивление={len(support_resistance.get('resistance', []))}")
             
             analysis = {
                 "timestamp": datetime.now().isoformat(),
@@ -128,9 +151,13 @@ class ChartAnalyzer:
             }
             
             self.analysis_history.append(analysis)
+            print(f"✅ [Analyzer] Анализ завершен успешно")
             return analysis
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"❌ [Analyzer] Ошибка анализа: {str(e)}\n{error_details}")
             return {"error": f"Ошибка анализа: {str(e)}"}
     
     def _detect_trend(self, edges, img) -> str:
@@ -382,53 +409,49 @@ class SmartBrowser(QMainWindow):
             QMessageBox.critical(self, "Ошибка скриншота", result)
             self.progress_bar.setVisible(False)
         else:
-            # Скриншот успешно создан
-            filepath = result
-            filename = os.path.basename(filepath)
-            
-            if os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                print(f"✅ Скриншот сохранен: {filepath}, размер: {file_size} байт")
+            try:
+                # Скриншот успешно создан
+                filepath = result
+                filename = os.path.basename(filepath)
                 
-                # Загружаем и показываем превью
-                pixmap = QPixmap(filepath)
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(
-                        self.screenshot_preview.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    self.screenshot_preview.setPixmap(scaled_pixmap)
+                if os.path.exists(filepath):
+                    file_size = os.path.getsize(filepath)
+                    print(f"✅ Скриншот сохранен: {filepath}, размер: {file_size} байт")
                     
-                    self.last_screenshot = filepath
-                    self.progress_bar.setValue(100)
-                    QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
-                    
-                    self.statusBar.showMessage(f"✅ Скриншот сохранен: {filename}")
-                    
-                    # Уведомление
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Information)
-                    msg.setWindowTitle("Скриншот готов")
-                    msg.setText(f"Скриншот сохранен:\n{filename}")
-                    msg.setInformativeText("Хотите открыть файл?")
-                    msg.setStandardButtons(QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok)
-                    msg.setDefaultButton(QMessageBox.StandardButton.Ok)
-                    
-                    ret = msg.exec()
-                    if ret == QMessageBox.StandardButton.Open:
-                        self.open_screenshot_file(filepath)
-                else:
-                    self.progress_bar.setVisible(False)
-                    QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение\nУбедитесь, что график полностью загрузился")
-            
-            # Захватываем всю страницу целиком (grabFullPage) - это лучше для TradingView
-            page.grabFullPage(lambda pixmap: save_screenshot(pixmap))
-            
-        except Exception as e:
-            self.statusBar.showMessage(f"Ошибка: {str(e)}")
-            self.progress_bar.setVisible(False)
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
+                    # Загружаем и показываем превью
+                    pixmap = QPixmap(filepath)
+                    if not pixmap.isNull():
+                        scaled_pixmap = pixmap.scaled(
+                            self.screenshot_preview.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation
+                        )
+                        self.screenshot_preview.setPixmap(scaled_pixmap)
+                        
+                        self.last_screenshot = filepath
+                        self.progress_bar.setValue(100)
+                        QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
+                        
+                        self.statusBar.showMessage(f"✅ Скриншот сохранен: {filename}")
+                        
+                        # Уведомление
+                        msg = QMessageBox(self)
+                        msg.setIcon(QMessageBox.Icon.Information)
+                        msg.setWindowTitle("Скриншот готов")
+                        msg.setText(f"Скриншот сохранен:\n{filename}")
+                        msg.setInformativeText("Хотите открыть файл?")
+                        msg.setStandardButtons(QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok)
+                        msg.setDefaultButton(QMessageBox.StandardButton.Ok)
+                        
+                        ret = msg.exec()
+                        if ret == QMessageBox.StandardButton.Open:
+                            self.open_screenshot_file(filepath)
+                
+                self.progress_bar.setVisible(False)
+            except Exception as e:
+                self.statusBar.showMessage(f"Ошибка: {str(e)}")
+                self.progress_bar.setVisible(False)
+                QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
     
     def open_screenshot_file(self, filepath):
         """Открывает скриншот в стандартном приложении просмотра изображений"""
@@ -461,16 +484,28 @@ class SmartBrowser(QMainWindow):
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(30)
             
+            # Проверяем существование файла и его размер
+            if not os.path.exists(self.last_screenshot):
+                raise FileNotFoundError(f"Файл скриншота не найден: {self.last_screenshot}")
+            
+            file_size = os.path.getsize(self.last_screenshot)
+            print(f"🔍 Начинаю анализ файла: {self.last_screenshot}, размер: {file_size} байт")
+            
             # Выполняем анализ
             analysis = self.analyzer.analyze_screenshot(self.last_screenshot)
+            
+            print(f"📊 Результат анализа: {analysis}")
             
             self.progress_bar.setValue(70)
             
             if "error" in analysis:
-                self.analysis_result.setText(f"❌ Ошибка анализа:\n{analysis['error']}")
+                error_msg = f"❌ Ошибка анализа:\n{analysis['error']}"
+                print(error_msg)
+                self.analysis_result.setText(error_msg)
             else:
                 # Отображаем результаты
                 summary = self.analyzer.get_analysis_summary()
+                print(f"✅ Анализ успешен: {summary[:100]}...")
                 self.analysis_result.setText(summary)
                 
                 # Обновляем историю
@@ -482,6 +517,10 @@ class SmartBrowser(QMainWindow):
             QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
             
         except Exception as e:
+            error_trace = f"Ошибка анализа: {str(e)}\nТип: {type(e).__name__}"
+            print(error_trace)
+            import traceback
+            traceback.print_exc()
             self.statusBar.showMessage(f"Ошибка анализа: {str(e)}")
             self.progress_bar.setVisible(False)
             QMessageBox.critical(self, "Ошибка", f"Не удалось проанализировать график:\n{str(e)}")
