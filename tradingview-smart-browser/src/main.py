@@ -390,48 +390,49 @@ class SmartBrowser(QMainWindow):
             QMessageBox.critical(self, "Ошибка скриншота", result)
             self.progress_bar.setVisible(False)
         else:
-            # Скриншот успешно создан
-            filepath = result
-            filename = os.path.basename(filepath)
-            
-            if os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                print(f"✅ Скриншот сохранен: {filepath}, размер: {file_size} байт")
+            try:
+                # Скриншот успешно создан
+                filepath = result
+                filename = os.path.basename(filepath)
                 
-                # Загружаем и показываем превью
-                pixmap = QPixmap(filepath)
-                if not pixmap.isNull():
-                    scaled_pixmap = pixmap.scaled(
-                        self.screenshot_preview.size(),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    self.screenshot_preview.setPixmap(scaled_pixmap)
+                if os.path.exists(filepath):
+                    file_size = os.path.getsize(filepath)
+                    print(f"✅ Скриншот сохранен: {filepath}, размер: {file_size} байт")
                     
-                    self.last_screenshot = filepath
-                    self.progress_bar.setValue(100)
-                    QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
-                    
-                    self.statusBar.showMessage(f"✅ Скриншот сохранен: {filename}")
-                    
-                    # Уведомление
-                    msg = QMessageBox(self)
-                    msg.setIcon(QMessageBox.Icon.Information)
-                    msg.setWindowTitle("Скриншот готов")
-                    msg.setText(f"Скриншот сохранен:\n{filename}")
-                    msg.setInformativeText("Хотите открыть файл?")
-                    msg.setStandardButtons(QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok)
-                    msg.setDefaultButton(QMessageBox.StandardButton.Ok)
-                    
-                    ret = msg.exec()
-                    if ret == QMessageBox.StandardButton.Open:
-                        self.open_screenshot_file(filepath)
-            
-            self.progress_bar.setVisible(False)
-        except Exception as e:
-            self.statusBar.showMessage(f"Ошибка: {str(e)}")
-            self.progress_bar.setVisible(False)
-            QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
+                    # Загружаем и показываем превью
+                    pixmap = QPixmap(filepath)
+                    if not pixmap.isNull():
+                        scaled_pixmap = pixmap.scaled(
+                            self.screenshot_preview.size(),
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation
+                        )
+                        self.screenshot_preview.setPixmap(scaled_pixmap)
+                        
+                        self.last_screenshot = filepath
+                        self.progress_bar.setValue(100)
+                        QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
+                        
+                        self.statusBar.showMessage(f"✅ Скриншот сохранен: {filename}")
+                        
+                        # Уведомление
+                        msg = QMessageBox(self)
+                        msg.setIcon(QMessageBox.Icon.Information)
+                        msg.setWindowTitle("Скриншот готов")
+                        msg.setText(f"Скриншот сохранен:\n{filename}")
+                        msg.setInformativeText("Хотите открыть файл?")
+                        msg.setStandardButtons(QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok)
+                        msg.setDefaultButton(QMessageBox.StandardButton.Ok)
+                        
+                        ret = msg.exec()
+                        if ret == QMessageBox.StandardButton.Open:
+                            self.open_screenshot_file(filepath)
+                
+                self.progress_bar.setVisible(False)
+            except Exception as e:
+                self.statusBar.showMessage(f"Ошибка: {str(e)}")
+                self.progress_bar.setVisible(False)
+                QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
     
     def open_screenshot_file(self, filepath):
         """Открывает скриншот в стандартном приложении просмотра изображений"""
