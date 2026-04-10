@@ -1,0 +1,20 @@
+{
+  "name": "tradingview-smart-browser",
+  "version": "1.0.0",
+  "description": "Умный браузер для анализа графиков TradingView с AI-помощником",
+  "main": "src/main.py",
+  "scripts": {
+    "start": "python src/main.py"
+  },
+  "dependencies": {
+    "python": ">=3.8"
+  },
+  "required_packages": [
+    "PyQt6",
+    "PyQt6-WebEngine",
+    "opencv-python",
+    "numpy",
+    "pillow",
+    "requests"
+  ]
+}
