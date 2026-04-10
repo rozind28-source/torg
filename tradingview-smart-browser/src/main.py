@@ -426,9 +426,8 @@ class SmartBrowser(QMainWindow):
                     ret = msg.exec()
                     if ret == QMessageBox.StandardButton.Open:
                         self.open_screenshot_file(filepath)
-            # Захватываем всю страницу целиком (grabFullPage) - это лучше для TradingView
-            page.grabFullPage(lambda pixmap: save_screenshot(pixmap))
             
+            self.progress_bar.setVisible(False)
         except Exception as e:
             self.statusBar.showMessage(f"Ошибка: {str(e)}")
             self.progress_bar.setVisible(False)
