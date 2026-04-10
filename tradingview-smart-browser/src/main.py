@@ -13,7 +13,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QSplitter, QTextEdit, QFileDialog,
-    QMessageBox, QToolBar, QStatusBar, QProgressBar
+    QMessageBox, QToolBar, QStatusBar, QProgressBar, QLineEdit
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import Qt, QUrl, QTimer, QSize
@@ -302,8 +302,9 @@ class SmartBrowser(QMainWindow):
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(50)
             
-            # Создаем временную директорию для скриншотов
-            screenshot_dir = os.path.join(os.getcwd(), "screenshots")
+            # Создаем директорию для скриншотов в корне проекта
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            screenshot_dir = os.path.join(base_dir, "screenshots")
             os.makedirs(screenshot_dir, exist_ok=True)
             
             # Генерируем имя файла с временной меткой
@@ -311,40 +312,67 @@ class SmartBrowser(QMainWindow):
             filename = f"screenshot_{timestamp}.png"
             filepath = os.path.join(screenshot_dir, filename)
             
-            # Для реального захвата нужно использовать QWebEnginePage
-            # Это упрощенная версия - в продакшене потребуется доработка
+            # Используем QWebEnginePage для захвата
             page = self.browser.page()
             
-            # Симуляция захвата (в реальной реализации нужно использовать printToPdf или аналоги)
-            # Здесь мы создаем заглушку для демонстрации
-            self.progress_bar.setValue(100)
+            # Функция обратного вызова для сохранения скриншота
+            def save_screenshot(pixmap):
+                if pixmap and not pixmap.isNull():
+                    pixmap.save(filepath)
+                    
+                    # Отображаем превью
+                    scaled_pixmap = pixmap.scaled(
+                        self.screenshot_preview.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    self.screenshot_preview.setPixmap(scaled_pixmap)
+                    
+                    self.last_screenshot = filepath
+                    self.progress_bar.setValue(100)
+                    self.progress_bar.setVisible(False)
+                    
+                    self.statusBar.showMessage(f"Скриншот сохранен: {filename}")
+                    
+                    # Показываем уведомление с кнопкой открытия
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Icon.Information)
+                    msg.setWindowTitle("Скриншот готов")
+                    msg.setText(f"Скриншот сохранен:\n{filename}")
+                    msg.setInformativeText("Хотите открыть файл?")
+                    msg.setStandardButtons(QMessageBox.StandardButton.Open | QMessageBox.StandardButton.Ok)
+                    msg.setDefaultButton(QMessageBox.StandardButton.Ok)
+                    
+                    ret = msg.exec()
+                    if ret == QMessageBox.StandardButton.Open:
+                        self.open_screenshot_file(filepath)
+                else:
+                    self.progress_bar.setVisible(False)
+                    QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение")
             
-            # Создаем тестовое изображение
-            pixmap = QPixmap(800, 600)
-            pixmap.fill(Qt.GlobalColor.white)
-            pixmap.save(filepath)
-            
-            # Отображаем превью
-            scaled_pixmap = pixmap.scaled(
-                self.screenshot_preview.size(),
-                Qt.AspectRatioMode.KeepAspectRatio
-            )
-            self.screenshot_preview.setPixmap(scaled_pixmap)
-            
-            self.last_screenshot = filepath
-            self.statusBar.showMessage(f"Скриншот сохранен: {filename}")
-            self.progress_bar.setVisible(False)
-            
-            QMessageBox.information(
-                self,
-                "Скриншот готов",
-                f"Скриншот сохранен:\n{filepath}\n\nТеперь нажмите 'Анализировать'"
-            )
+            # Захватываем видимую область страницы
+            page.grabFullscreen(lambda pixmap: save_screenshot(pixmap))
             
         except Exception as e:
             self.statusBar.showMessage(f"Ошибка: {str(e)}")
             self.progress_bar.setVisible(False)
             QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
+    
+    def open_screenshot_file(self, filepath):
+        """Открывает скриншот в стандартном приложении просмотра изображений"""
+        try:
+            import subprocess
+            import platform
+            
+            system = platform.system()
+            if system == "Windows":
+                os.startfile(filepath)
+            elif system == "Darwin":  # macOS
+                subprocess.run(["open", filepath])
+            else:  # Linux
+                subprocess.run(["xdg-open", filepath])
+        except Exception as e:
+            QMessageBox.warning(self, "Предупреждение", f"Не удалось открыть файл автоматически:\n{e}\n\nПуть: {filepath}")
     
     def analyze_chart(self):
         """Анализ текущего скриншота"""
