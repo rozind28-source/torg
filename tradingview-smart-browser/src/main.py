@@ -298,9 +298,9 @@ class SmartBrowser(QMainWindow):
     def capture_screenshot(self):
         """Захват скриншота текущей страницы"""
         try:
-            self.statusBar.showMessage("Захват скриншота...")
+            self.statusBar.showMessage("Захват скриншота... Подождите 2 секунды для полной загрузки графика")
             self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(50)
+            self.progress_bar.setValue(30)
             
             # Создаем директорию для скриншотов в корне проекта
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -311,6 +311,19 @@ class SmartBrowser(QMainWindow):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"screenshot_{timestamp}.png"
             filepath = os.path.join(screenshot_dir, filename)
+            
+            # Даем время на полную отрисовку графика (TradingView может загружаться долго)
+            QTimer.singleShot(2000, lambda: self._do_capture_screenshot(filepath, filename))
+            
+        except Exception as e:
+            self.statusBar.showMessage(f"Ошибка: {str(e)}")
+            self.progress_bar.setVisible(False)
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
+    
+    def _do_capture_screenshot(self, filepath, filename):
+        """Выполняет захват скриншота после задержки"""
+        try:
+            self.progress_bar.setValue(60)
             
             # Используем QWebEnginePage для захвата
             page = self.browser.page()
@@ -326,6 +339,31 @@ class SmartBrowser(QMainWindow):
                         if os.path.exists(filepath):
                             file_size = os.path.getsize(filepath)
                             print(f"Скриншот сохранен: {filepath}, размер: {file_size} байт")
+                            
+                            # Проверяем, не белый ли скриншот (простая проверка)
+                            img = pixmap.toImage()
+                            if not img.isNull():
+                                # Проверяем несколько пикселей в разных местах
+                                is_white = True
+                                check_points = [
+                                    (img.width() // 4, img.height() // 4),
+                                    (img.width() // 2, img.height() // 2),
+                                    (img.width() * 3 // 4, img.height() * 3 // 4),
+                                ]
+                                for x, y in check_points:
+                                    if 0 <= x < img.width() and 0 <= y < img.height():
+                                        pixel = img.pixel(x, y)
+                                        # Если хотя бы один пиксель не белый/светло-серый, значит скриншот нормальный
+                                        r, g, b = ((pixel >> 16) & 0xFF), ((pixel >> 8) & 0xFF), (pixel & 0xFF)
+                                        if r < 240 or g < 240 or b < 240:  # Не совсем белый
+                                            is_white = False
+                                            break
+                                
+                                if is_white:
+                                    print("Предупреждение: скриншот может быть белым!")
+                                    self.statusBar.showMessage("Предупреждение: возможно, график не загрузился")
+                                else:
+                                    print("Скриншот содержит изображение графика")
                         else:
                             print(f"Ошибка: файл {filepath} не создан")
                     
@@ -357,10 +395,10 @@ class SmartBrowser(QMainWindow):
                         self.open_screenshot_file(filepath)
                 else:
                     self.progress_bar.setVisible(False)
-                    QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение")
+                    QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение\nУбедитесь, что график полностью загрузился")
             
-            # Захватываем видимую область страницы - используем grabWindow вместо grabFullscreen
-            page.grabWindow(lambda pixmap: save_screenshot(pixmap))
+            # Захватываем всю страницу целиком (grabFullPage) - это лучше для TradingView
+            page.grabFullPage(lambda pixmap: save_screenshot(pixmap))
             
         except Exception as e:
             self.statusBar.showMessage(f"Ошибка: {str(e)}")
