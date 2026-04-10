@@ -318,7 +318,16 @@ class SmartBrowser(QMainWindow):
             # Функция обратного вызова для сохранения скриншота
             def save_screenshot(pixmap):
                 if pixmap and not pixmap.isNull():
-                    pixmap.save(filepath)
+                    # Сохраняем с явным указанием формата
+                    success = pixmap.save(filepath, "PNG")
+                    
+                    if success:
+                        # Проверяем, что файл действительно создан
+                        if os.path.exists(filepath):
+                            file_size = os.path.getsize(filepath)
+                            print(f"Скриншот сохранен: {filepath}, размер: {file_size} байт")
+                        else:
+                            print(f"Ошибка: файл {filepath} не создан")
                     
                     # Отображаем превью
                     scaled_pixmap = pixmap.scaled(
@@ -350,8 +359,8 @@ class SmartBrowser(QMainWindow):
                     self.progress_bar.setVisible(False)
                     QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение")
             
-            # Захватываем видимую область страницы
-            page.grabFullscreen(lambda pixmap: save_screenshot(pixmap))
+            # Захватываем видимую область страницы - используем grabWindow вместо grabFullscreen
+            page.grabWindow(lambda pixmap: save_screenshot(pixmap))
             
         except Exception as e:
             self.statusBar.showMessage(f"Ошибка: {str(e)}")
