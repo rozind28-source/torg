@@ -34,6 +34,8 @@ class ScreenshotWorker(QThread):
         try:
             import mss
             import mss.tools
+            from PIL import Image
+            import numpy as np
             
             # Получаем координаты и размер виджета браузера
             browser_widget = self.browser_window.browser
@@ -71,8 +73,14 @@ class ScreenshotWorker(QThread):
                 filename = f"tradingview_{timestamp}.png"
                 filepath = os.path.join(screenshot_dir, filename)
                 
-                # Сохраняем как PNG (используем bgra для корректных цветов)
-                mss.tools.to_png(screenshot.bgra, screenshot.size, output=filepath)
+                # Конвертируем BGRA в RGB и сохраняем через PIL
+                # mss возвращает данные в формате BGRA, нужно конвертировать в RGB
+                img_array = np.frombuffer(screenshot.bgra, dtype=np.uint8).reshape(
+                    screenshot.size[1], screenshot.size[0], 4
+                )
+                # Меняем местами синий и красный каналы (BGRA -> RGB), отбрасываем alpha
+                img_rgb = Image.fromarray(img_array[:, :, [2, 1, 0]], mode='RGB')
+                img_rgb.save(filepath, 'PNG')
                 
                 # Проверяем результат
                 if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
@@ -418,10 +426,6 @@ class SmartBrowser(QMainWindow):
                     ret = msg.exec()
                     if ret == QMessageBox.StandardButton.Open:
                         self.open_screenshot_file(filepath)
-                else:
-                    self.progress_bar.setVisible(False)
-                    QMessageBox.critical(self, "Ошибка", "Не удалось захватить изображение\nУбедитесь, что график полностью загрузился")
-            
             # Захватываем всю страницу целиком (grabFullPage) - это лучше для TradingView
             page.grabFullPage(lambda pixmap: save_screenshot(pixmap))
             
