@@ -16,42 +16,70 @@ from PyQt6.QtWidgets import (
     QMessageBox, QToolBar, QStatusBar, QProgressBar, QLineEdit
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import Qt, QUrl, QTimer, QSize, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QImage
+from PyQt6.QtCore import Qt, QUrl, QTimer, QSize, QThread, pyqtSignal, QRect
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QImage, QScreen
 import numpy as np
 import asyncio
 
 
 class ScreenshotWorker(QThread):
-    """Worker для захвата скриншотов через Playwright"""
+    """Worker для захвата скриншотов через mss (захват области экрана)"""
     finished = pyqtSignal(str)  # Путь к файлу или ошибка
     
-    def __init__(self, url, save_path):
+    def __init__(self, browser_window):
         super().__init__()
-        self.url = url
-        self.save_path = save_path
+        self.browser_window = browser_window
     
     def run(self):
         try:
-            asyncio.run(self.take_screenshot())
-        except Exception as e:
-            self.finished.emit(f"ERROR: {str(e)}")
-    
-    async def take_screenshot(self):
-        try:
-            from playwright.async_api import async_playwright
+            import mss
+            import mss.tools
             
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page(viewport={"width": 1920, "height": 1080})
+            # Получаем координаты и размер виджета браузера
+            browser_widget = self.browser_window.browser
+            if not browser_widget:
+                self.finished.emit("ERROR: Browser widget not found")
+                return
+            
+            # Конвертируем координаты в экранные
+            screen = browser_widget.screen()
+            if not screen:
+                self.finished.emit("ERROR: No screen found")
+                return
+            
+            geometry = browser_widget.geometry()
+            global_geometry = browser_widget.mapToGlobal(geometry.topLeft())
+            
+            # Создаем область для захвата
+            with mss.mss() as sct:
+                monitor = {
+                    "left": global_geometry.x(),
+                    "top": global_geometry.y(),
+                    "width": geometry.width(),
+                    "height": geometry.height()
+                }
                 
-                await page.goto(self.url, wait_until="networkidle", timeout=60000)
-                await page.wait_for_timeout(5000)  # Ждем загрузки графика
+                # Делаем скриншот
+                screenshot = sct.grab(monitor)
                 
-                await page.screenshot(path=self.save_path, full_page=True)
-                await browser.close()
+                # Создаем директорию для скриншотов
+                screenshot_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'screenshots')
+                os.makedirs(screenshot_dir, exist_ok=True)
                 
-                self.finished.emit(self.save_path)
+                # Генерируем имя файла
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"tradingview_{timestamp}.png"
+                filepath = os.path.join(screenshot_dir, filename)
+                
+                # Сохраняем как PNG
+                mss.tools.to_png(screenshot.rgb, screenshot.size, output=filepath)
+                
+                # Проверяем результат
+                if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
+                    self.finished.emit(filepath)
+                else:
+                    self.finished.emit(f"ERROR: File empty or too small: {filepath}")
+                    
         except Exception as e:
             self.finished.emit(f"ERROR: {str(e)}")
 
@@ -331,27 +359,14 @@ class SmartBrowser(QMainWindow):
         self.statusBar.showMessage(f"Переход на: {url}")
     
     def capture_screenshot(self):
-        """Захват скриншота через Playwright (надежный способ)"""
+        """Захват скриншота через mss (захват области экрана)"""
         try:
-            self.statusBar.showMessage("Захват скриншота через Playwright... Пожалуйста, подождите")
+            self.statusBar.showMessage("Захват скриншота... Пожалуйста, подождите")
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(30)
             
-            # Создаем директорию для скриншотов
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            screenshot_dir = os.path.join(base_dir, "screenshots")
-            os.makedirs(screenshot_dir, exist_ok=True)
-            
-            # Генерируем имя файла
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"screenshot_{timestamp}.png"
-            filepath = os.path.join(screenshot_dir, filename)
-            
-            # Получаем текущий URL из браузера
-            current_url = self.browser.url().toString()
-            
             # Запускаем worker для скриншота
-            self.screenshot_worker = ScreenshotWorker(current_url, filepath)
+            self.screenshot_worker = ScreenshotWorker(self)
             self.screenshot_worker.finished.connect(self.on_screenshot_finished)
             self.screenshot_worker.start()
             
