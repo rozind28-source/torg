@@ -1,78 +1,62 @@
-# Examples
-## Example 1:
-Input:
-### Added files:
-['src/main.py', 'README.md', 'config.json']
-
-### Deleted files:
-['old/unused.py']
-
-### Modified files:
-['utils.py']
-
-### Current .gitignore Content
-(empty)
-
-Expected Output:
-(empty — output nothing)
-
-## Example 2:
-Input:
-### Added files:
-['pycache/main.cpython-310.pyc', 'dist/app.js', '.env.local', '.vscode/settings.json']
-
-### Deleted files:
-[]
-
-### Modified files:
-[]
-
-### Current .gitignore Content
-'*.log'
-
-Expected Output:
 ```
-# Compiled and build artifacts
-*.pyc
+# Python
 __pycache__/
-*.o
-*.obj
-dist/
-build/
-
-# Dependencies
-.venv/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
 venv/
-node_modules/
-
-# Logs and temp files
+.venv/
+.ENV
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 *.log
-*.tmp
-*.swp
+*.pot
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Environment
 .env
 .env.local
 .env.*
 
-# Editors
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
 ```
-
----
-Input:
-### Added files:
-[]
-
-### Deleted files:
-[]
-
-### Modified files:
-['tradingview-smart-browser/src/main.py']
-
-### Current .gitignore Content
-(empty)
-
-Output:
-(empty)

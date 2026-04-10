@@ -46,6 +46,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### 4. Установите браузеры для Playwright (ОБЯЗАТЕЛЬНО):
+
+```bash
+playwright install chromium
+```
+
 Или вручную:
 
 ```bash

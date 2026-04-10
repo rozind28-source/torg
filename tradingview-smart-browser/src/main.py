@@ -16,9 +16,44 @@ from PyQt6.QtWidgets import (
     QMessageBox, QToolBar, QStatusBar, QProgressBar, QLineEdit
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtCore import Qt, QUrl, QTimer, QSize
+from PyQt6.QtCore import Qt, QUrl, QTimer, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon, QAction, QPixmap, QImage
 import numpy as np
+import asyncio
+
+
+class ScreenshotWorker(QThread):
+    """Worker для захвата скриншотов через Playwright"""
+    finished = pyqtSignal(str)  # Путь к файлу или ошибка
+    
+    def __init__(self, url, save_path):
+        super().__init__()
+        self.url = url
+        self.save_path = save_path
+    
+    def run(self):
+        try:
+            asyncio.run(self.take_screenshot())
+        except Exception as e:
+            self.finished.emit(f"ERROR: {str(e)}")
+    
+    async def take_screenshot(self):
+        try:
+            from playwright.async_api import async_playwright
+            
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": 1920, "height": 1080})
+                
+                await page.goto(self.url, wait_until="networkidle", timeout=60000)
+                await page.wait_for_timeout(5000)  # Ждем загрузки графика
+                
+                await page.screenshot(path=self.save_path, full_page=True)
+                await browser.close()
+                
+                self.finished.emit(self.save_path)
+        except Exception as e:
+            self.finished.emit(f"ERROR: {str(e)}")
 
 
 class ChartAnalyzer:
@@ -296,78 +331,53 @@ class SmartBrowser(QMainWindow):
         self.statusBar.showMessage(f"Переход на: {url}")
     
     def capture_screenshot(self):
-        """Захват скриншота текущей страницы"""
+        """Захват скриншота через Playwright (надежный способ)"""
         try:
-            self.statusBar.showMessage("Захват скриншота... Подождите 2 секунды для полной загрузки графика")
+            self.statusBar.showMessage("Захват скриншота через Playwright... Пожалуйста, подождите")
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(30)
             
-            # Создаем директорию для скриншотов в корне проекта
+            # Создаем директорию для скриншотов
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             screenshot_dir = os.path.join(base_dir, "screenshots")
             os.makedirs(screenshot_dir, exist_ok=True)
             
-            # Генерируем имя файла с временной меткой
+            # Генерируем имя файла
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"screenshot_{timestamp}.png"
             filepath = os.path.join(screenshot_dir, filename)
             
-            # Даем время на полную отрисовку графика (TradingView может загружаться долго)
-            QTimer.singleShot(2000, lambda: self._do_capture_screenshot(filepath, filename))
+            # Получаем текущий URL из браузера
+            current_url = self.browser.url().toString()
+            
+            # Запускаем worker для скриншота
+            self.screenshot_worker = ScreenshotWorker(current_url, filepath)
+            self.screenshot_worker.finished.connect(self.on_screenshot_finished)
+            self.screenshot_worker.start()
             
         except Exception as e:
             self.statusBar.showMessage(f"Ошибка: {str(e)}")
             self.progress_bar.setVisible(False)
             QMessageBox.critical(self, "Ошибка", f"Не удалось сделать скриншот:\n{str(e)}")
     
-    def _do_capture_screenshot(self, filepath, filename):
-        """Выполняет захват скриншота после задержки"""
-        try:
-            self.progress_bar.setValue(60)
+    def on_screenshot_finished(self, result):
+        """Обработка результата захвата скриншота"""
+        if result.startswith("ERROR:"):
+            self.statusBar.showMessage(f"Ошибка: {result}")
+            QMessageBox.critical(self, "Ошибка скриншота", result)
+            self.progress_bar.setVisible(False)
+        else:
+            # Скриншот успешно создан
+            filepath = result
+            filename = os.path.basename(filepath)
             
-            # Используем QWebEnginePage для захвата
-            page = self.browser.page()
-            
-            # Функция обратного вызова для сохранения скриншота
-            def save_screenshot(pixmap):
-                if pixmap and not pixmap.isNull():
-                    # Сохраняем с явным указанием формата
-                    success = pixmap.save(filepath, "PNG")
-                    
-                    if success:
-                        # Проверяем, что файл действительно создан
-                        if os.path.exists(filepath):
-                            file_size = os.path.getsize(filepath)
-                            print(f"Скриншот сохранен: {filepath}, размер: {file_size} байт")
-                            
-                            # Проверяем, не белый ли скриншот (простая проверка)
-                            img = pixmap.toImage()
-                            if not img.isNull():
-                                # Проверяем несколько пикселей в разных местах
-                                is_white = True
-                                check_points = [
-                                    (img.width() // 4, img.height() // 4),
-                                    (img.width() // 2, img.height() // 2),
-                                    (img.width() * 3 // 4, img.height() * 3 // 4),
-                                ]
-                                for x, y in check_points:
-                                    if 0 <= x < img.width() and 0 <= y < img.height():
-                                        pixel = img.pixel(x, y)
-                                        # Если хотя бы один пиксель не белый/светло-серый, значит скриншот нормальный
-                                        r, g, b = ((pixel >> 16) & 0xFF), ((pixel >> 8) & 0xFF), (pixel & 0xFF)
-                                        if r < 240 or g < 240 or b < 240:  # Не совсем белый
-                                            is_white = False
-                                            break
-                                
-                                if is_white:
-                                    print("Предупреждение: скриншот может быть белым!")
-                                    self.statusBar.showMessage("Предупреждение: возможно, график не загрузился")
-                                else:
-                                    print("Скриншот содержит изображение графика")
-                        else:
-                            print(f"Ошибка: файл {filepath} не создан")
-                    
-                    # Отображаем превью
+            if os.path.exists(filepath):
+                file_size = os.path.getsize(filepath)
+                print(f"✅ Скриншот сохранен: {filepath}, размер: {file_size} байт")
+                
+                # Загружаем и показываем превью
+                pixmap = QPixmap(filepath)
+                if not pixmap.isNull():
                     scaled_pixmap = pixmap.scaled(
                         self.screenshot_preview.size(),
                         Qt.AspectRatioMode.KeepAspectRatio,
@@ -377,11 +387,11 @@ class SmartBrowser(QMainWindow):
                     
                     self.last_screenshot = filepath
                     self.progress_bar.setValue(100)
-                    self.progress_bar.setVisible(False)
+                    QTimer.singleShot(1000, lambda: self.progress_bar.setVisible(False))
                     
-                    self.statusBar.showMessage(f"Скриншот сохранен: {filename}")
+                    self.statusBar.showMessage(f"✅ Скриншот сохранен: {filename}")
                     
-                    # Показываем уведомление с кнопкой открытия
+                    # Уведомление
                     msg = QMessageBox(self)
                     msg.setIcon(QMessageBox.Icon.Information)
                     msg.setWindowTitle("Скриншот готов")
