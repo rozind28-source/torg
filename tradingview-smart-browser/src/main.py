@@ -71,8 +71,8 @@ class ScreenshotWorker(QThread):
                 filename = f"tradingview_{timestamp}.png"
                 filepath = os.path.join(screenshot_dir, filename)
                 
-                # Сохраняем как PNG
-                mss.tools.to_png(screenshot.rgb, screenshot.size, output=filepath)
+                # Сохраняем как PNG (используем bgra для корректных цветов)
+                mss.tools.to_png(screenshot.bgra, screenshot.size, output=filepath)
                 
                 # Проверяем результат
                 if os.path.exists(filepath) and os.path.getsize(filepath) > 1000:
